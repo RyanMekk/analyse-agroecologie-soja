@@ -1,0 +1,1381 @@
+---
+title: "Analyse de l’impact du soja - PCAmix"
+author: "Mekki Ryan"
+date: "2025-06-02"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(PCAmixdata)
+library(stringr)
+library(FactoMineR)
+library(dplyr)
+library(factoextra)
+library(knitr)
+library(tidyr)
+library(rstatix)
+library(janitor)
+library(rlang)
+library(ggplot2)
+library(reshape2)
+library(forcats)
+library(RColorBrewer)
+```
+
+
+# 1. Objectif de l’étude
+
+L’objectif de ce travail est d’analyser les liens entre les **profils des familles rurales** dans la région de Santarém (municipalité, zone, type de culture, revenus agricoles) et **leur perception des impacts du soja** (santé, eau, environnement, climat).
+
+# 2. Préparation des données
+
+## 2.1 Sélection des variables
+
+```{r}
+
+dataOd<-read.csv(file = "/Users/mekkiryan/Documents/data_Odyssea/data_fr.csv",header=TRUE,sep=",",dec=",")
+
+```
+
+
+```{r}
+unique(dataOd$Q_7.2.1_revenu_agricole_bon_mois)
+str(dataOd$Q_7.2.1_revenu_agricole_bon_mois)
+```
+
+
+
+
+## 2.2 Description des variables
+
+```{r}
+resume_variable <- function(var) {
+  list(
+    Type = class(var)[1],
+    `Nb NA` = sum(is.na(var)),
+    `Nb valeurs uniques` = n_distinct(var, na.rm = TRUE),
+    `Exemples` = paste0(head(unique(na.omit(var)), 3), collapse = ", ")
+  )
+}
+desc_table <- as.data.frame(t(sapply(df_sel, resume_variable)))
+knitr::kable(desc_table)
+```
+
+
+```{r}
+unique(dataOd$Q_6.2.1_Produits_chimiques)
+unique(dataOd$Q_6.3.1_entendu_parler_agroecologie)
+unique(dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie)
+```
+
+
+
+
+```{r}
+
+dataOd$Q_6.2.1_Produits_chimiques_binaire <- ifelse(
+  str_trim(dataOd$Q_6.2.1_Produits_chimiques) == "Utilisation",
+  "oui",
+  "non"
+)
+
+
+dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige <- ifelse(
+  dataOd$Q_6.3.1_entendu_parler_agroecologie == "Non",
+  "Non",
+  ifelse(
+    dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie != " ",
+    dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie,
+    NA
+  )
+)
+```
+
+
+
+```{r}
+table_croise <- table(
+  Entendu = dataOd$Q_6.3.1_entendu_parler_agroecologie,
+  Pratique = dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige,
+  useNA = "ifany"
+)
+print(table_croise)
+
+```
+
+
+
+# 10. Profil agroécologique et tableau croisé
+```{r}
+table_croise_2<-table(
+  Pesticides = dataOd$Q_6.2.1_Produits_chimiques_binaire,
+  Pratique = dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige, useNA = "ifany"
+)
+
+print(table_croise_2)
+```
+
+
+```{r}
+df_vides <- dataOd %>%
+  filter(
+    (is.na(Q_6.2.1_Produits_chimiques) | str_trim(Q_6.2.1_Produits_chimiques) == "") &
+    (is.na(Q_6.3.1.3_Pratique.de.l.agroecologie) | str_trim(Q_6.3.1.3_Pratique.de.l.agroecologie) == "")
+  )
+
+nrow(df_vides)
+
+```
+
+
+```{r}
+table_herbicides<-table(
+  herbicide = df_vides$Q_6.1.4.3_herbicide,
+  insecticide = df_vides$Q_6.1.4.2_Insecticides_chimiques,
+  useNA = "ifany"
+)
+print(table_herbicides)
+```
+> regarder comment se répartissent les 4G -> regarder la distribution/freq
+
+>variables pour mesurer l'isolement
+
+> représenter le croisement des 4G
+
+
+## Localisation
+- `Q_2.2_municipe` : municipalité Belterra, Santarém, etc.
+- `Q_2.2.1_zone` : sous-zones précises
+
+## Type de production / pratiques agricoles
+- `Q_5.1.2_type_culture` : type de cultures déclarées
+- `type_culture_simplifie` : insertion sur le marché
+- `Q_6.3.1.3_Pratique.de.l.agroecologie` : pratique de l’agroécologie
+- `Q_6.2.1_Produits_chimiques` : usage de produits chimiques
+- `Q_6.1.4.3_herbicide` : usage d’herbicides
+- `Q_6.1.4.2_Insecticides_chimiques` : usage d’insecticides
+-Q_6.1.2_emplois_main d'oeuvre 
+##  Revenus agricoles
+
+- `Q_7.2.1_revenu_agricole_bon_mois` et `Q_7.2.2_revenu_agricole_mois_difficile`
+- `revenu_bon_num`, `revenu_difficile_num` : recodage numérique
+> Q7.1.1.2.2
+
+##  Perception des impacts du soja
+- `Q_9.4.1.5_soja_a_porte_atteinte_a_la_sante_familiale`
+- `Q_9.4.1.5_soja_apporte_une_mauvaise_qualite_de_l_eau`
+- `Q_9.4.1.5_soja_a_endommage_l_environnement`
+- `Q_9.4.1.5_soja_a_apporte_des_dommages_au_changement_climatique`
+
+>-`9.5.2perception du`
+>- `Q_9.4.1.5_perte de production "principale"` 
+>-9.2.1.2 les nouvelles activitées variable binaire orange/banane/etc 
+>-9.4.2 atteint par la pulvér des pest
+>-Q11_distance du soja
+
+> imprimer le tableau page 19
+>pourcentage de personne qui travail sur la propriété
+>regarder la variable pour savoir si ils embauchent des gens
+> est-ce qu'un individu qui habite dans la propriété travail dans la propriété?
+>participe/leadership
+"leadership"-> repérer si il y a un leadership on le met en 1/0 sinon 
+> Q4.4.1_groupe de femme, syndicat et coopératives
+> faire une variable globale participe/leadership/est-ce qu'il y a un leadership? 0 sinon.
+
+```{r}
+unique(dataOd$Q_6.2.1_Produits_chimiques)
+unique(dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige)
+```
+
+```{r}
+sum(
+  dataOd$Q_6.2.1_Produits_chimiques == " " &
+  dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie == " "
+)
+```
+
+
+
+```{r}
+
+indices_vides <- which(
+  (is.na(dataOd$Q_6.2.1_Produits_chimiques) | str_trim(dataOd$Q_6.2.1_Produits_chimiques) == " ") &
+  (is.na(dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige) | str_trim(dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige) == " ")
+)
+
+for (i in indices_vides) {
+  herb <- tolower(str_trim(dataOd$Q_6.1.4.3_herbicide[i]))
+  insect <- tolower(str_trim(dataOd$Q_6.1.4.2_Insecticides_chimiques[i]))
+  
+  if ((herb == "jamais" | is.na(herb)) & insect == "jamais") {
+   
+    dataOd$Q_6.2.1_Produits_chimiques_binaire[i] <- "non"
+  } else if (
+    insect == "tous les 2-3 mois" |
+    herb == "tous les 2-3 mois"
+  ) {
+    
+    dataOd$Q_6.2.1_Produits_chimiques_binaire[i] <- "oui"
+  } else {
+    
+    dataOd$Q_6.2.1_Produits_chimiques_binaire[i] <- NA
+  }
+}
+```
+
+```{r}
+table(dataOd$Q_6.2.1_Produits_chimiques_binaire,
+      dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige,
+      useNA = "ifany")
+```
+
+```{r}
+
+indices_residuels <- which(
+  (dataOd$Q_6.2.1_Produits_chimiques_binaire) == "non" &
+  is.na((dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige))
+)
+```
+
+```{r}
+indices_residuels_2 <- which(
+  (dataOd$Q_6.2.1_Produits_chimiques_binaire) == "oui" &
+  is.na((dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige))
+)
+```
+
+
+
+```{r}
+print(indices_residuels)
+```
+
+```{r}
+print(indices_residuels_2)
+```
+
+
+
+```{r}
+
+dataOd[indices_residuels, c("Q_6.1.4.3_herbicide",
+                            "Q_6.1.4.2_Insecticides_chimiques",
+                            "Q_6.2.1_Produits_chimiques",
+                            "Q_6.3.1.3_Pratique.de.l.agroecologie.corrige")]
+```
+```{r}
+dataOd[indices_residuels_2, c("Q_6.1.4.3_herbicide",
+                            "Q_6.1.4.2_Insecticides_chimiques",
+                            "Q_6.2.1_Produits_chimiques",
+                            "Q_6.3.1.3_Pratique.de.l.agroecologie.corrige")]
+```
+
+
+
+```{r}
+
+indices_a_corriger <- c(109, 120, 170, 330, 378, 430, 461, 60, 141, 187, 315, 390)
+
+
+dataOd$Q_6.2.1_Produits_chimiques_binaire[indices_a_corriger] <- "non"
+```
+
+
+```{r}
+table(dataOd$Q_6.2.1_Produits_chimiques_binaire,
+      dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie,
+      useNA = "ifany")
+```
+
+
+
+
+```{r}
+
+indices_a_corriger_2 <- which(dataOd$Q_6.2.1_Produits_chimiques_binaire == "non" & dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie == " ")
+
+dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie[indices_a_corriger_2] <- "Non"
+
+indices_a_corriger_3 <- which(dataOd$Q_6.2.1_Produits_chimiques_binaire == "oui" & dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie == " ")
+
+dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie[indices_a_corriger_3] <- "Non"
+
+
+```
+
+
+```{r}
+table(dataOd$Q_6.2.1_Produits_chimiques_binaire,
+      dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie,
+      useNA = "ifany")
+```
+
+
+```{r}
+agro <- (dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie)
+pest <- (dataOd$Q_6.2.1_Produits_chimiques_binaire)
+unique(agro)
+unique(pest)
+```
+
+
+
+```{r}
+dataOd$groupe <- NA
+
+dataOd$groupe[pest == "non" & agro == "Non"]  <- "Groupe 2 : sans agro sans pesticides"
+dataOd$groupe[pest == "oui" & agro == "Non"]  <- "Groupe 3 : sans agro avec pesticides"
+dataOd$groupe[pest == "non" & agro == "Oui"]  <- "Groupe 1 : agro sans pesticides"
+dataOd$groupe[pest == "oui" & agro == "Oui"]  <- "Groupe 4 : agro avec pesticides"
+```
+
+
+```{r}
+table(dataOd$groupe, useNA = "ifany")
+```
+
+
+
+# Tableau de synthèse par groupe
+
+```{r tableau-synthese-par-groupe, message=FALSE, warning=FALSE}
+tableau_synthese <- dataOd %>%
+  group_by(groupe) %>%
+  summarise(
+    n = n(),
+    pct_agro = mean(Q_6.3.1.3_Pratique.de.l.agroecologie == "Oui", na.rm = TRUE),
+    pct_pesticide = mean(Q_6.2.1_Produits_chimiques_binaire == "oui", na.rm = TRUE),
+    munic_mode = names(sort(table(Q_2.2_municipe), decreasing = TRUE)[1]),
+    zone_mode = names(sort(table(Q_2.2.1_zone), decreasing = TRUE)[1])
+  )
+
+kable(tableau_synthese, caption = "Tableau de synthèse des groupes")
+```
+
+
+# Table finale des effectifs croisés
+
+```{r}
+table_finale <- table(dataOd$Q_6.2.1_Produits_chimiques_binaire,
+                      dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie,
+                      useNA = "ifany")
+print(table_finale)
+```
+
+```{r}
+dataOd$groupe <- with(dataOd, 
+  ifelse(Q_6.3.1.3_Pratique.de.l.agroecologie == "Oui" & Q_6.2.1_Produits_chimiques_binaire == "non", 1,
+  ifelse(Q_6.3.1.3_Pratique.de.l.agroecologie == "Non" & Q_6.2.1_Produits_chimiques_binaire == "non", 2,
+  ifelse(Q_6.3.1.3_Pratique.de.l.agroecologie == "Non" & Q_6.2.1_Produits_chimiques_binaire == "oui", 3,
+  ifelse(Q_6.3.1.3_Pratique.de.l.agroecologie == "Oui" & Q_6.2.1_Produits_chimiques_binaire == "oui", 4, NA)))))
+```
+
+
+```{r}
+dataOd$type_culture_simplifie <- case_when(
+  str_detect(dataOd$Q_5.1.2_type_culture, "arriere-cour|arrière-cour|SAF") ~ "Autoproduction",
+  str_detect(dataOd$Q_5.1.2_type_culture, "Consortium|coop") ~ "Collectif",
+  str_detect(dataOd$Q_5.1.2_type_culture, "Ferme productive|Plantation|commercial") ~ "Commercial",
+  TRUE ~ "Autre"
+)
+
+```
+
+
+
+```{r}
+
+
+vars_interet <- c(
+  "Q_2.2_municipe", "Q_2.2.1_zone", "Q_5.1.2_type_culture", "type_culture_simplifie",
+  "Q_6.3.1.3_Pratique.de.l.agroecologie", "Q_6.2.1_Produits_chimiques_binaire",
+  "Q_6.1.4.3_herbicide", "Q_6.1.4.2_Insecticides_chimiques",
+  "Q_6.1.2_emploi_main_d.oeuvre", "Q_9.4.1.5_soja_a_porte_atteinte_a_la_sante_familiale", "Q_9.4.1.5_soja_apporte_une_mauvaise_qualite_de_l.eau",
+  "Q_9.4.1.5_soja_a_endommage_l.environnement", "Q_9.4.1.5_soja_a_apporte_des_dommages_au_changement_climatique",
+  "Q_9.5.2_future5ans_veut_continuer_a_renforcer", "Q_9.4.1.5_soja.a.entraîne.une.perte.de.production",
+  "Q_9.2.1.2_quelles_nouvelles_activites", "Q_9.4.2_atteint_pour_la_pulverisation_des_pesticides",
+  "Q_11_Dist_soja"
+)
+
+```
+
+```{r}
+dataOd$type_culture_simplifie
+```
+
+
+
+```{r}
+
+vars_num <- vars_interet[sapply(dataOd[vars_interet], is.numeric)]
+vars_cat <- vars_interet[sapply(dataOd[vars_interet], function(x) is.character(x) || is.factor(x))]
+
+
+tableaux_cat <- lapply(vars_cat, function(var) {
+  message("Variable catégorielle : ", var)
+  tab <- tabyl(dataOd, .data[[var]], groupe) %>%
+    adorn_percentages("col") %>%
+    adorn_totals(where = c("row", "col")) %>%
+    adorn_title("combined")
+  kable(tab, caption = var)
+})
+
+tableaux_num <- lapply(vars_num, function(var) {
+  message("Variable numérique : ", var)
+ 
+  stats <- dataOd %>%
+    group_by(groupe) %>%
+    summarise(
+      moyenne = round(mean(.data[[var]], na.rm = TRUE), 2),
+      ecart_type = round(sd(.data[[var]], na.rm = TRUE), 2),
+      .groups = "drop"
+    )
+ 
+  test <- kruskal_test(dataOd, as.formula(paste(var, "~ groupe")))
+
+  cat("### ", var, "\n\n")
+  print(kable(stats, caption = paste("Moyenne et écart-type pour", var)))
+ cat("\n**Test de Kruskal-Wallis** p-value :", format.pval(test$p, digits = 3), "\n\n")
+  
+})
+
+
+
+```
+
+
+
+```{r}
+vars_participation <- c(
+  "Q_4.4.1_participer_eglise",
+  "Q_4.4.1_participer_au_groupe_jeunes",
+  "Q_4.4.1_participe_groupe_femmes",
+  "Q_4.4.1_participer_syndicat",
+  "Q_4.4.1_participer_a_la_cooperation",
+  "Q_4.4.1_participer_a_la_communaute_associative",
+  "Q_4.4.1_participer_au_football_de_club"
+)
+
+lapply(dataOd[, vars_participation], unique)
+```
+
+
+```{r}
+
+dataOd$leadership_detected <- apply(dataOd[, vars_participation], 1, function(row) {
+  any(row == "Leadership")
+})
+
+
+dataOd$participation_detected <- apply(dataOd[, vars_participation], 1, function(row) {
+  any(row == "Participer")
+})
+
+
+dataOd$niveau_participation <- ifelse(
+  dataOd$leadership_detected, 1,
+  ifelse(dataOd$participation_detected, 2, 3)
+)
+```
+
+
+```{r}
+table(dataOd$niveau_participation)
+```
+
+
+
+
+```{r}
+dataOd$niveau_participation <- factor(dataOd$niveau_participation,
+                                      levels = c(1, 2, 3),
+                                      labels = c("Leadership", "Participation", "Aucune"))
+
+```
+
+```{r}
+dataOd$niveau_participation
+```
+
+```{r}
+table(dataOd$groupe, useNA = "ifany")
+```
+
+
+
+
+```{r}
+dataOd$groupe <- factor(dataOd$groupe,
+                         levels = 1:4,
+                         labels = c("Agro / Sans Pesticides",
+                                    "Sans Agro / Sans Pesticides",
+                                    "Sans Agro / Avec Pesticides",
+                                    "Agro / Avec Pesticides"))
+
+```
+
+
+
+```{r}
+tab_niveau <- dataOd %>%
+  tabyl(niveau_participation, groupe) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1)
+
+print(tab_niveau)
+```
+
+
+```{r}
+
+
+ggplot(dataOd, aes(x = factor(groupe), fill = niveau_participation)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Niveau de participation par groupe",
+    x = "Groupe agro/pesticides",
+    y = "Proportion",
+    fill = "Niveau"
+  ) +
+  theme_minimal()
+```
+
+> faire pour toute les variables catégorielles, continue "distance au soja"
+>faire un hist de dist soja
+>recoder de 1 à 4 les groupes et les lables 
+>créer un fichier propre qui par du fichier de données bruts 
+
+
+```{r}
+hist(dataOd$Q_11_Dist_soja,breaks=40)
+hist(dataOd$Q_11_Dist_soja[dataOd$groupe=="Sans Agro / Sans Pesticides"],breaks=60)
+hist(dataOd$Q_11_Dist_soja[dataOd$groupe=="Agro / Sans Pesticides"],breaks=60)
+```
+
+
+```{r}
+unique(dataOd$groupe)
+
+```
+
+
+
+```{r}
+
+vars_num <- c("Q_11_Dist_soja")
+vars_cat <- setdiff(vars_interet, vars_num)
+
+
+for (var in vars_num) {
+  p <- ggplot(dataOd, aes_string(x = var, fill = "as.factor(groupe)")) +
+    geom_histogram(alpha = 0.6, position = "identity", bins = 30) +
+    labs(title = paste("Distribution de", var, "par groupe"),
+         x = var, fill = "Groupe") +
+    theme_minimal() +
+    scale_fill_brewer(palette = "Set2")
+  print(p)
+}
+
+
+for (var in vars_cat) {
+  p <- ggplot(dataOd, aes_string(x = var, fill = "as.factor(groupe)")) +
+    geom_bar(position = "fill") +
+    labs(title = paste("Proportion de", var, "par groupe"),
+         x = var, y = "Proportion", fill = "Groupe") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_brewer(palette = "Set1")
+  print(p)
+}
+
+
+for (var in vars_participation) {
+  p <- ggplot(dataOd, aes_string(x = var, fill = "as.factor(groupe)")) +
+    geom_bar(position = "fill") +
+    labs(title = paste("Participation -", var),
+         x = var, y = "Proportion", fill = "Groupe") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_brewer(palette = "Dark2")
+  print(p)
+}
+
+```
+
+
+
+```{r}
+for (var in vars_num) {
+  p <- ggplot(dataOd, aes_string(x = var, fill = "as.factor(groupe)")) +
+    geom_histogram(alpha = 0.6, position = "identity", bins = 30) +
+    labs(title = paste("Distribution de", var, "par groupe"),
+         x = var, fill = "Groupe") +
+    theme_minimal() +
+    scale_fill_brewer(palette = "Set2")
+  print(p)
+}
+
+# Variables catégorielles — barres horizontales : groupe en X, variable en Y
+for (var in vars_cat) {
+  p <- ggplot(dataOd, aes_string(x = "as.factor(groupe)", fill = var)) +
+    geom_bar(position = "fill") +
+    coord_flip() +  # Inverser les axes
+    labs(title = paste("Proportion des modalités de", var, "par groupe"),
+         x = "Groupe", y = "Proportion", fill = var) +
+    theme_minimal() +
+    theme(axis.text.y = element_text(size = 10)) +
+    scale_fill_brewer(palette = "Set1")
+  print(p)
+}
+
+# Participation — même logique
+for (var in vars_participation) {
+  p <- ggplot(dataOd, aes_string(x = "as.factor(groupe)", fill = var)) +
+    geom_bar(position = "fill") +
+    coord_flip() +  # Inverser les axes
+    labs(title = paste("Participation -", var),
+         x = "Groupe", y = "Proportion", fill = var) +
+    theme_minimal() +
+    theme(axis.text.y = element_text(size = 10)) +
+    scale_fill_brewer(palette = "Dark2")
+  print(p)
+}
+```
+
+
+
+
+
+
+```{r}
+vars_qualitatives <- c(
+  "Q_2.2_municipe", "Q_2.2.1_zone", "Q_5.1.2_type_culture", "type_culture_simplifie",
+  "Q_6.3.1.3_Pratique.de.l.agroecologie", "Q_6.2.1_Produits_chimiques_binaire",
+  "Q_6.1.4.3_herbicide", "Q_6.1.4.2_Insecticides_chimiques",
+  "Q_6.1.2_emploi_main_d.oeuvre", "Q_9.2.1.2_quelles_nouvelles_activites",
+  "Q_9.4.2_atteint_pour_la_pulverisation_des_pesticides"
+)
+
+
+data_clust <- dataOd %>%
+  select(all_of(vars_qualitatives)) %>%
+  na.omit() %>%
+  mutate(across(everything(), as.factor))
+
+
+res.mca <- MCA(data_clust, graph = FALSE)
+
+
+coords <- res.mca$ind$coord[, 1:5] 
+
+
+set.seed(123)
+res.kmeans <- kmeans(coords, centers = 3, nstart = 25)
+
+
+fviz_cluster(res.kmeans, data = coords,
+             geom = "point", ellipse.type = "convex",
+             palette = "jco", ggtheme = theme_minimal(),
+             main = "Clustering des individus (k-means)")
+
+
+data_clust$cluster_kmeans <- as.factor(res.kmeans$cluster)
+```
+
+
+
+```{r}
+get_modalite_frequente <- function(var) {
+  dataOd %>%
+    filter(!is.na(.data[[var]]), !is.na(groupe)) %>%
+    count(groupe, .data[[var]]) %>%
+    group_by(groupe) %>%
+    mutate(freq = n / sum(n)) %>%
+    arrange(desc(freq)) %>%
+    slice(1) %>%
+    mutate(
+      variable = var,
+      modalite = as.character(.data[[var]])  
+    ) %>%
+    select(groupe, variable, modalite, freq)
+}
+
+
+table_freq_groupes <- bind_rows(lapply(vars_qualitatives, get_modalite_frequente))
+```
+
+
+```{r}
+table_freq_groupes <- table_freq_groupes %>%
+  filter(freq > 0.3) %>%
+  mutate(
+    variable = gsub("Q_[0-9\\.]+_", "", variable), 
+    id = paste(variable, ":", modalite),          
+    id = stringr::str_trunc(id, 40)                 
+  )
+```
+
+```{r}
+print(table_freq_groupes)
+```
+
+
+```{r}
+ggplot(table_freq_groupes, aes(x = groupe, y = fct_reorder(id, freq), fill = freq)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "darkred") +
+  labs(
+    title = "Fréquence des modalités les plus courantes par groupe",
+    x = "Groupe", y = "Modalité", fill = "Fréquence"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.y = element_text(size = 6),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+
+
+```{r}
+
+data_acm <- dataOd %>%
+  select(all_of(vars_qualitatives), groupe) %>%
+  na.omit()
+
+
+data_acm <- data_acm %>% mutate(across(everything(), as.factor))
+
+
+res.acm <- MCA(data_acm %>% select(-groupe), graph = FALSE)
+
+
+fviz_mca_ind(res.acm,
+             habillage = data_acm$groupe,
+             label = "none",
+             addEllipses = TRUE,
+             ellipse.type = "convex",
+             mean.point = TRUE,     
+             palette = "Dark2",
+             ggtheme = theme_minimal()) +
+  labs(title = "Centres et dispersion des groupes agro/pesticides ACM")
+```
+
+
+```{r}
+resultats_chi2 <- lapply(vars_qualitatives, function(var) {
+  tbl <- table(dataOd[[var]], dataOd$groupe)
+  test <- suppressWarnings(chisq.test(tbl))  
+  data.frame(variable = var, statistic = test$statistic, p.value = test$p.value, df = test$parameter)
+})
+
+
+resultats_chi2_df <- do.call(rbind, resultats_chi2)
+
+
+resultats_chi2_df <- resultats_chi2_df[order(-resultats_chi2_df$statistic), ]
+
+
+print(resultats_chi2_df)
+```
+
+>tests du chi2 d’indépendance entre les 4 groupes agro/pesticides et différentes variables qualitatives.
+>p-value < 0.05 signifie qu'il ya une association significative entre la variable et les groupes et cela signifie que la variable différencie les groupes.
+>	Les pratiques agricoles (agroécologie, pesticides, herbicides, insecticides) sont très fortement associées aux groupes cela est logique, car c’est ainsi que les groupes ont été construits.
+Les zones géographiques (zone, municipe) influencent aussi l’appartenance à un groupe.
+Certaines conséquences environnementales ou sociales (dommages, emploi, environnement) varient significativement selon les groupes.
+
+
+
+```{r}
+dataOd$Q_11_Dist_soja <- as.numeric(dataOd$Q_11_Dist_soja)
+
+vars_quali <- c(
+  "Q_2.2_municipe", "Q_2.2.1_zone", "type_culture_simplifie",
+  "Q_6.3.1.3_Pratique.de.l.agroecologie.corrige",
+  "Q_6.2.1_Produits_chimiques_binaire",
+  "Q_6.1.4.3_herbicide",
+  "Q_6.1.4.2_Insecticides_chimiques",
+  "Q_6.1.2_emploi_main_d.oeuvre",
+  "Q_9.2.1.2_quelles_nouvelles_activites",
+  "Q_9.4.2_atteint_pour_la_pulverisation_des_pesticides"
+)
+dataOd[vars_quali] <- lapply(dataOd[vars_quali], as.factor)
+
+df_mix <- dataOd %>%
+  select(all_of(vars_quali), Q_11_Dist_soja) %>%
+  drop_na()
+
+X_quali <- df_mix %>% select(all_of(vars_quali))
+X_quanti <- df_mix %>% select(Q_11_Dist_soja)
+
+
+res_mix <- PCAmix(
+  X.quanti = X_quanti,
+  X.quali = X_quali,
+  rename.level = TRUE,
+  graph = FALSE
+)
+```
+
+```{r}
+plot(res_mix, choice = "ind", main = "Variables explicatives et perceptions")
+```
+
+```{r}
+plot(res_mix, choice = "sqload", main = "Variables explicatives et perceptions")
+```
+```{r}
+
+ind_coords <- as.data.frame(res_mix$ind$coord)
+
+colnames(ind_coords)[1:2] <- c("Dim.1", "Dim.2")
+```
+
+
+```{r}
+
+ind_coords$groupe <- dataOd$groupe[match(rownames(ind_coords), rownames(dataOd))]
+
+
+ind_coords <- ind_coords[!is.na(ind_coords$groupe), ]
+```
+
+
+
+```{r}
+ggplot(ind_coords, aes(x = Dim.1, y = Dim.2, color = groupe)) +
+  geom_point(size = 2, alpha = 0.7) +
+  stat_ellipse(aes(group = groupe), type = "norm", linetype = 2) +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Projection des individus selon leur groupe (ACP mixte)",
+    x = paste0("Dim 1 (", round(res_mix$eig[1, 2], 2), "%)"),
+    y = paste0("Dim 2 (", round(res_mix$eig[2, 2], 2), "%)")
+  ) +
+  theme_minimal()
+```
+
+
+
+
+
+#Points qu'on a abordé :
+
+- graphique des profils par zone / éventuellement cartographie
+
+- fréquence des modalités : regrouper par type de variables (pesticides et insecticides / main d'oeuvre et nouvelles activités / types d'impact du soja)
+
+- faire une ACP avec pratiques (ou faire une MFA?) : types de production, utilisation de pesticides et insecticides (fréquence), lien aux marchés
+
+- tester si on a des différences entre les groupes agroécologiques sans et avec pesticides, pour justifier de les fusionner
+
+- renverser la représentation des histogrammes, pour mettre les groupes en X et les variables en production
+
+- faire un histogramme pour tous les types de culture (culture annuelle, paturage, culture semi-pérenne, culture pérenne)
+
+- réflechir aux codes couleurs : mettre les agroécologiques dans une même couleur (par exemple bleu) et les autres dans une autre couleur (par exemple jaune), avec ceux qui utilise des pesticides plus foncés et ceux qui n'en utilisent pas plus clairs
+
+- regrouper les groupes agroécologiques d'un côté et les non-agroécologiques de l'autre côté
+
+
+```{r}
+#install.packages(c("sf","RColorBrewer"))
+#install.packages("rnaturalearthhires")
+```
+
+
+```{r}
+#install.packages("devtools") # I guess you also need this
+#devtools::install_github("ropensci/rnaturalearthhires")
+#library("rnaturalearth")
+```
+
+
+```{r}
+library("rnaturalearthhires")
+```
+
+```{r}
+install.packages("remotes")
+remotes::install_github("ropensci/rnaturalearthhires")
+```
+
+
+```{r}
+library(RColorBrewer)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(geobr)
+```
+```{r}
+
+municipios <- read_municipality(year = 2020)
+
+
+para_muni <- municipios %>% filter(abbrev_state == "PA")
+
+liste_municipalites <- c("Santarém", "Belterra", "Mojuí Dos Campos")
+santarem_region <- para_muni %>%
+  filter(name_muni %in% liste_municipalites)
+
+
+data_geo <- dataOd %>%
+  rename(
+    latitude = YLatitude.corrigee2.1Point.GPS.de.l.interview.location_latitude,
+    longitude = XLCorrected.length2.1GPS.point.of.interview.location_latitude
+  ) %>%
+  filter(!is.na(latitude), !is.na(longitude))
+
+
+points_sf <- st_as_sf(data_geo, coords = c("longitude", "latitude"), crs = 4326)
+
+couleurs_groupes <- c(
+  "Agro / Sans Pesticides" = "#99CCFF",  # Orange
+  "Sans Agro / Sans Pesticides" = "#FFFF99",  # Brun/Rouge
+  "Sans Agro / Avec Pesticides" = "#CC9900",  # Rose
+  "Agro / Avec Pesticides" = "#003399"   # Bleu
+)
+
+ggplot() +
+  geom_sf(data = santarem_region, fill = "lightgreen", color = "black") +
+  geom_sf(data = points_sf, aes(color = groupe), size = 2.5, alpha = 0.8) +
+  scale_color_manual(values = couleurs_groupes) +
+  theme_minimal() +
+  labs(
+    title = "Localisation des individus selon leur groupe agro/pesticides",
+    color = "Groupe",
+    caption = "Cartographie centrée sur Santarém, Belterra et Mojuí Dos Campos"
+  )
+```
+
+
+
+
+```{r}
+
+table(dataOd$Q_6.2.1_Produits_chimiques_binaire, dataOd$groupe)
+
+
+table(dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige, dataOd$groupe)
+
+```
+
+
+```{r}
+
+table(dataOd$Q_6.1.2_emploi_main_d.oeuvre, dataOd$groupe)
+
+
+table(dataOd$Q_9.2.1_nouvelles_activites, dataOd$groupe)
+```
+
+
+```{r}
+
+table(dataOd$Q_9.4.1.5_soja_apporte_une_mauvaise_qualite_de_l.eau, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5_soja_a_porte_des_dommages_aux_difficultes_d.acces_au_lot, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5_soja_apporte_une_mauvaise_qualite_de_l.eau, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5_soja_a_porte_atteinte_a_la_sante_familiale, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5_soja_a_apporte_des_dommages_au_changement_climatique, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5_soja_a_endommage_l.environnement, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5_soja_a_porte_des_blessures_aux_autres, dataOd$groupe)
+
+table(dataOd$Q_9.4.1.5.1_Autres_pertes_de_soja_apportees_qui, dataOd$groupe)
+
+table(dataOd$Q_9.4.2_atteint_pour_la_pulverisation_des_pesticides, dataOd$groupe)
+
+```
+
+
+
+```{r}
+# Pesticides
+tab_pest <- table(dataOd$Q_6.2.1_Produits_chimiques_binaire, dataOd$groupe)
+prop_pest <- prop.table(tab_pest, 2) * 100
+round(prop_pest, 1)
+
+# Agroécologie
+tab_agro <- table(dataOd$Q_6.3.1.3_Pratique.de.l.agroecologie.corrige, dataOd$groupe)
+prop_agro <- prop.table(tab_agro, 2) * 100
+round(prop_agro, 1)
+```
+
+
+
+```{r}
+# Emploi de main d'œuvre
+tab_main <- table(dataOd$Q_6.1.2_emploi_main_d.oeuvre, dataOd$groupe)
+prop_main <- prop.table(tab_main, 2) * 100
+round(prop_main, 1)
+
+# Nouvelles activités
+tab_activite <- table(dataOd$Q_9.2.1_nouvelles_activites, dataOd$groupe)
+prop_activite <- prop.table(tab_activite, 2) * 100
+round(prop_activite, 1)
+```
+
+
+```{r}
+# Eau
+tab_eau <- table(dataOd$Q_9.4.1.5_soja_apporte_une_mauvaise_qualite_de_l.eau, dataOd$groupe)
+prop_eau <- prop.table(tab_eau, 2) * 100
+round(prop_eau, 1)
+
+# Santé
+tab_sante <- table(dataOd$Q_9.4.1.5_soja_a_porte_atteinte_a_la_sante_familiale, dataOd$groupe)
+prop_sante <- prop.table(tab_sante, 2) * 100
+round(prop_sante, 1)
+
+# Environnement
+tab_env <- table(dataOd$Q_9.4.1.5_soja_a_endommage_l.environnement, dataOd$groupe)
+prop_env <- prop.table(tab_env, 2) * 100
+round(prop_env, 1)
+
+# Accès au lot
+tab_acces <- table(dataOd$Q_9.4.1.5_soja_a_porte_des_dommages_aux_difficultes_d.acces_au_lot, dataOd$groupe)
+prop_acces <- prop.table(tab_acces, 2) * 100
+round(prop_acces, 1)
+
+# Blessures aux autres
+tab_blessure <- table(dataOd$Q_9.4.1.5_soja_a_porte_des_blessures_aux_autres, dataOd$groupe)
+prop_blessure <- prop.table(tab_blessure, 2) * 100
+round(prop_blessure, 1)
+
+# Changement climatique
+tab_climat <- table(dataOd$Q_9.4.1.5_soja_a_apporte_des_dommages_au_changement_climatique, dataOd$groupe)
+prop_climat <- prop.table(tab_climat, 2) * 100
+round(prop_climat, 1)
+
+# Atteint par la pulvérisation
+tab_pulve <- table(dataOd$Q_9.4.2_atteint_pour_la_pulverisation_des_pesticides, dataOd$groupe)
+prop_pulve <- prop.table(tab_pulve, 2) * 100
+round(prop_pulve, 1)
+```
+
+
+
+```{r}
+print("=== Pesticides ===")
+print(round(prop_pest, 1))
+
+print("=== Agroécologie ===")
+print(round(prop_agro, 1))
+
+print("=== Main d'oeuvre ===")
+print(round(prop_main, 1))
+
+print("=== Nouvelle activité ===")
+print(round(prop_activite, 1))
+
+print("=== Impact eau ===")
+print(round(prop_eau, 1))
+
+print("=== Impact santé ===")
+print(round(prop_sante, 1))
+
+print("=== Impact environnement ===")
+print(round(prop_env, 1))
+
+print("=== Accès au lot ===")
+print(round(prop_acces, 1))
+
+print("=== Blessures autres ===")
+print(round(prop_blessure, 1))
+
+print("=== Climat ===")
+print(round(prop_climat, 1))
+
+print("=== Pulvérisation directe ===")
+print(round(prop_pulve, 1))
+```
+
+
+
+
+```{r}
+data_plot <- dataOd %>%
+  mutate(
+    pesticides = ifelse(Q_6.2.1_Produits_chimiques_binaire %in% c("oui", "Oui", "1"), 1, 0),
+    agroecologie = ifelse(Q_6.3.1.3_Pratique.de.l.agroecologie.corrige %in% c("oui", "Oui", "1"), 1, 0),
+    main_oeuvre = ifelse(Q_6.1.2_emploi_main_d.oeuvre %in% c("oui", "Oui", "1"), 1, 0),
+    nouvelle_activite = ifelse(Q_9.2.1_nouvelles_activites %in% c("oui", "Oui", "1"), 1, 0),
+    impact_eau = ifelse(Q_9.4.1.5_soja_apporte_une_mauvaise_qualite_de_l.eau == 1, 1, 0),
+    impact_sante = ifelse(Q_9.4.1.5_soja_a_porte_atteinte_a_la_sante_familiale == 1, 1, 0),
+    impact_env = ifelse(Q_9.4.1.5_soja_a_endommage_l.environnement == 1, 1, 0),
+    impact_lot = ifelse(Q_9.4.1.5_soja_a_porte_des_dommages_aux_difficultes_d.acces_au_lot == 1, 1, 0),
+    impact_autres = ifelse(Q_9.4.1.5_soja_a_porte_des_blessures_aux_autres == 1, 1, 0),
+    impact_climat = ifelse(Q_9.4.1.5_soja_a_apporte_des_dommages_au_changement_climatique == 1, 1, 0),
+    pulverisation = ifelse(Q_9.4.2_atteint_pour_la_pulverisation_des_pesticides == 1, 1, 0)
+  ) %>%
+  select(groupe, pesticides, agroecologie, main_oeuvre, nouvelle_activite,
+         impact_eau, impact_sante, impact_env, impact_lot,
+         impact_autres, impact_climat, pulverisation)
+
+
+data_long <- data_plot %>%
+  pivot_longer(
+    cols = -groupe,
+    names_to = "variable",
+    values_to = "valeur"
+  ) %>%
+  filter(!is.na(groupe), !is.na(valeur)) %>%
+  group_by(groupe, variable) %>%
+  summarise(pct = mean(valeur) * 100, .groups = "drop")
+
+
+labels_vars <- c(
+  pesticides = "Utilisation de pesticides",
+  agroecologie = "Agroécologie",
+  main_oeuvre = "Emploi de main d’oeuvre",
+  nouvelle_activite = "Nouvelle activité",
+  impact_eau = "Impact sur l’eau",
+  impact_sante = "Impact sur la santé",
+  impact_env = "Environnement endommagé",
+  impact_lot = "Accès au lot",
+  impact_autres = "Blessures aux autres",
+  impact_climat = "Changement climatique",
+  pulverisation = "Pulvérisation directe"
+)
+
+
+couleurs_groupes <- c(
+  "Agro / Sans Pesticides"       = "#99CCFF",  
+  "Agro / Avec Pesticides"       = "#003399",  
+  "Sans Agro / Sans Pesticides"  = "#FFFF99",  
+  "Sans Agro / Avec Pesticides"  = "#CC9900"  
+)
+
+
+ggplot(data_long, aes(x = variable, y = pct, fill = groupe)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(labels = labels_vars) +
+  scale_fill_manual(values = couleurs_groupes) +
+  labs(
+    title = "Fréquence des modalités par groupe (variables sur l'axe X)",
+    x = "Variable",
+    y = "Pourcentage",
+    fill = "Groupe"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+
+
+```{r}
+data_acp <- dataOd %>%
+  select(
+    Q_5.1.2_type_culture,
+    Q_6.1.4.3_herbicide,
+    Q_6.2.1_Produits_chimiques,
+    Q_7.1.1.2.3_forme_commercialisation
+  )
+
+
+res.mca <- MCA(data_acm, graph = FALSE)
+
+
+fviz_mca_var(res.mca, 
+             repel = TRUE,     
+             title = "MCA - Modalités des pratiques agricoles")
+
+
+fviz_mca_ind(res.mca, 
+             habillage = data_acm$groupe,
+             palette = "Dark2",
+             addEllipses = TRUE, 
+             repel = TRUE,
+             title = "MCA - Individus selon groupe agro/pesticides")
+```
+```{r}
+agro_data <- dataOd %>%
+  filter(Q_6.3.1.3_Pratique.de.l.agroecologie.corrige == "Oui" & !is.na(Q_6.2.1_Produits_chimiques_binaire))
+
+
+table_agro <- table(agro_data$Q_6.2.1_Produits_chimiques_binaire,
+                    agro_data$Q_9.2.1_nouvelles_activites)
+
+
+chisq.test(table_agro)
+```
+> le test du Chi2, X2 = 0.206, p = 0.649 met pas en évidence de lien significatif entre l’utilisation de produits chimiques et la pratique de nouvelles activités chez les producteurs agroécologiques
+
+```{r}
+freq_culture <- dataOd %>%
+  filter(!is.na(Q_5.1.2_type_culture), !is.na(groupe)) %>%
+  count(groupe, Q_5.1.2_type_culture) %>%
+  group_by(groupe) %>%
+  mutate(pourcentage = 100 * n / sum(n))
+
+
+ggplot(freq_culture, aes(x = Q_5.1.2_type_culture, y = pourcentage, fill = Q_5.1.2_type_culture)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ groupe, nrow = 1) +
+  labs(
+    title = "Répartition des types de culture par groupe",
+    x = "Type de culture",
+    y = "Pourcentage",
+    fill = "Type de culture"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  ) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+```
+
+
+```{r}
+freq_cult <- dataOd %>%
+  filter(!is.na(Q_5.1.2_type_culture)) %>%
+  count(groupe,Q_5.1.2_type_culture) %>%
+  group_by(Q_5.1.2_type_culture) %>%
+  mutate(pourcentage = n / sum(n) * 100)
+
+# Créer le graphique : groupes en abscisse, types de culture en ordonnée
+ggplot(freq_cult, aes(x = groupe, y = Q_5.1.2_type_culture, fill = pourcentage)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "grey", high = "darkblue") +
+  labs(
+    title = "Répartition des types de culture selon le groupe",
+    x = "Groupe",
+    y = "Type de culture",
+    fill = "Pourcentage"
+  ) +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
